@@ -1,0 +1,99 @@
+buildscript {
+    ext {
+        springBootVersion = '1.5.10.RELEASE'
+    }
+    repositories {
+        mavenCentral()
+        jcenter()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+        classpath "com.avast.gradle:gradle-docker-compose-plugin:0.6.17"
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'docker-compose'
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.springframework.boot:spring-boot-starter-web'
+    compile 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    compileOnly 'org.projectlombok:lombok'
+
+    testCompile 'org.springframework.boot:spring-boot-starter-test'
+    testCompile 'io.rest-assured:rest-assured:3.0.6'
+    testCompile 'org.seleniumhq.selenium:selenium-java:3.9.1'
+    testCompile 'org.seleniumhq.selenium:selenium-api:3.9.1'
+    testCompile 'org.seleniumhq.selenium:selenium-remote-driver:3.9.1'
+    testCompile 'org.seleniumhq.selenium:selenium-chrome-driver:3.9.1'
+    testCompile 'org.seleniumhq.selenium:selenium-support:3.9.1'
+    testCompile 'com.codeborne:selenide:4.10.01'
+
+    runtime 'org.postgresql:postgresql'
+    runtime 'org.springframework.boot:spring-boot-devtools'
+}
+
+task waitForUsersAPI(type: Exec) {
+    commandLine './wait-for-api.sh', 'http://localhost:8080/users', 'Users API'
+}
+
+task runUsersAPITests(type: Exec) {
+    workingDir './users-api'
+    commandLine './gradlew', 'test'
+}
+
+task startUIDevServer(type: Exec) {
+    workingDir './tunr-ui'
+    commandLine 'pm2', 'start', 'node_modules/react-scripts/scripts/start.js', '-f', '--name', 'tunr-ui-test'
+}
+
+task stopUIDevServer(type: Exec) {
+    workingDir './tunr-ui'
+    commandLine 'pm2', 'stop', 'tunr-ui-test'
+}
+
+test {
+    dependsOn cleanTest
+    dependsOn waitForUsersAPI
+    dependsOn startUIDevServer
+
+    testLogging {
+        exceptionFormat "full"
+        events "skipped", "passed", "failed"
+        displayGranularity 2
+    }
+
+}
+test.finalizedBy(stopUIDevServer)
+test.finalizedBy(composeDown)
+
+task allTests(type: Test) {
+    dependsOn cleanTest
+    dependsOn waitForUsersAPI
+    dependsOn startUIDevServer
+    dependsOn runUsersAPITests
+
+    testLogging {
+        exceptionFormat "full"
+        events "skipped", "passed", "failed"
+        displayGranularity 2
+    }
+}
+allTests.finalizedBy(stopUIDevServer)
+allTests.finalizedBy(composeDown)
+
+dockerCompose {
+    useComposeFiles = ['docker-compose.yml']
+}
+dockerCompose.isRequiredBy(test)
+dockerCompose.isRequiredBy(allTests)
